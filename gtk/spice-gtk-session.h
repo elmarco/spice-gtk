@@ -19,6 +19,7 @@
 #define __SPICE_CLIENT_GTK_SESSION_H__
 
 #include "spice-client.h"
+#include <gtk/gtk.h>
 
 G_BEGIN_DECLS
 
@@ -60,6 +61,10 @@ SpiceGtkSession *spice_gtk_session_get(SpiceSession *session);
 void spice_gtk_session_copy_to_guest(SpiceGtkSession *self);
 void spice_gtk_session_paste_from_guest(SpiceGtkSession *self);
 void spice_gtk_session_sync_keyboard_modifiers(SpiceGtkSession *self);
+void spice_gtk_session_pointer_leave(SpiceGtkSession *self, GtkWidget *widget,
+                                     GdkEventCrossing *crossing);
+void spice_gtk_session_pointer_enter(SpiceGtkSession *self, GtkWidget *widget,
+                                     GdkEventCrossing *crossing);
 
 G_END_DECLS
 

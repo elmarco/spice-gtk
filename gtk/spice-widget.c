@@ -472,46 +472,46 @@ static gboolean grab_broken(SpiceDisplay *self, GdkEventGrabBroken *event,
     return false;
 }
 
-static void drag_data_received_callback(SpiceDisplay *self,
-                                        GdkDragContext *drag_context,
-                                        gint x,
-                                        gint y,
-                                        GtkSelectionData *data,
-                                        guint info,
-                                        guint time,
-                                        gpointer *user_data)
-{
-    const guchar *buf;
-    gchar **file_urls;
-    int n_files;
-    SpiceDisplayPrivate *d = SPICE_DISPLAY_GET_PRIVATE(self);
-    int i = 0;
-    GFile **files;
+/* static void drag_data_received_callback(SpiceDisplay *self, */
+/*                                         GdkDragContext *drag_context, */
+/*                                         gint x, */
+/*                                         gint y, */
+/*                                         GtkSelectionData *data, */
+/*                                         guint info, */
+/*                                         guint time, */
+/*                                         gpointer *user_data) */
+/* { */
+/*     const guchar *buf; */
+/*     gchar **file_urls; */
+/*     int n_files; */
+/*     SpiceDisplayPrivate *d = SPICE_DISPLAY_GET_PRIVATE(self); */
+/*     int i = 0; */
+/*     GFile **files; */
 
-    /* We get a buf like:
-     * file:///root/a.txt\r\nfile:///root/b.txt\r\n
-     */
-    SPICE_DEBUG("%s: drag a file", __FUNCTION__);
-    buf = gtk_selection_data_get_data(data);
-    g_return_if_fail(buf != NULL);
+/*     /\* We get a buf like: */
+/*      * file:///root/a.txt\r\nfile:///root/b.txt\r\n */
+/*      *\/ */
+/*     SPICE_DEBUG("%s: drag a file", __FUNCTION__); */
+/*     buf = gtk_selection_data_get_data(data); */
+/*     g_return_if_fail(buf != NULL); */
 
-    file_urls = g_uri_list_extract_uris((const gchar*)buf);
-    n_files = g_strv_length(file_urls);
-    files = g_new0(GFile*, n_files + 1);
-    for (i = 0; i < n_files; i++) {
-        files[i] = g_file_new_for_uri(file_urls[i]);
-    }
-    g_strfreev(file_urls);
+/*     file_urls = g_uri_list_extract_uris((const gchar*)buf); */
+/*     n_files = g_strv_length(file_urls); */
+/*     files = g_new0(GFile*, n_files + 1); */
+/*     for (i = 0; i < n_files; i++) { */
+/*         files[i] = g_file_new_for_uri(file_urls[i]); */
+/*     } */
+/*     g_strfreev(file_urls); */
 
-    spice_main_file_copy_async(d->main, files, 0, NULL, NULL,
-                               NULL, NULL, NULL);
-    for (i = 0; i < n_files; i++) {
-        g_object_unref(files[i]);
-    }
-    g_free(files);
+/*     spice_main_file_copy_async(d->main, files, 0, NULL, NULL, */
+/*                                NULL, NULL, NULL); */
+/*     for (i = 0; i < n_files; i++) { */
+/*         g_object_unref(files[i]); */
+/*     } */
+/*     g_free(files); */
 
-    gtk_drag_finish(drag_context, TRUE, FALSE, time);
-}
+/*     gtk_drag_finish(drag_context, TRUE, FALSE, time); */
+/* } */
 
 static void grab_notify(SpiceDisplay *display, gboolean was_grabbed)
 {
@@ -525,16 +525,16 @@ static void spice_display_init(SpiceDisplay *display)
 {
     GtkWidget *widget = GTK_WIDGET(display);
     SpiceDisplayPrivate *d;
-    GtkTargetEntry targets = { "text/uri-list", 0, 0 };
+    /* GtkTargetEntry targets = { "text/uri-list", 0, 0 }; */
 
     d = display->priv = SPICE_DISPLAY_GET_PRIVATE(display);
 
     g_signal_connect(display, "grab-broken-event", G_CALLBACK(grab_broken), NULL);
     g_signal_connect(display, "grab-notify", G_CALLBACK(grab_notify), NULL);
 
-    gtk_drag_dest_set(widget, GTK_DEST_DEFAULT_ALL, &targets, 1, GDK_ACTION_COPY);
-    g_signal_connect(display, "drag-data-received",
-                     G_CALLBACK(drag_data_received_callback), NULL);
+    /* gtk_drag_dest_set(widget, GTK_DEST_DEFAULT_ALL, &targets, 1, GDK_ACTION_COPY); */
+    /* g_signal_connect(display, "drag-data-received", */
+    /*                  G_CALLBACK(drag_data_received_callback), NULL); */
 
     gtk_widget_add_events(widget,
                           GDK_STRUCTURE_MASK |
@@ -1392,7 +1392,7 @@ void spice_display_send_keys(SpiceDisplay *display, const guint *keyvals,
     }
 }
 
-static gboolean enter_event(GtkWidget *widget, GdkEventCrossing *crossing G_GNUC_UNUSED)
+static gboolean enter_event(GtkWidget *widget, GdkEventCrossing *crossing)
 {
     SpiceDisplay *display = SPICE_DISPLAY(widget);
     SpiceDisplayPrivate *d = SPICE_DISPLAY_GET_PRIVATE(display);
@@ -1403,10 +1403,12 @@ static gboolean enter_event(GtkWidget *widget, GdkEventCrossing *crossing G_GNUC
     try_keyboard_grab(display);
     update_display(display);
 
+    spice_gtk_session_pointer_enter(d->gtk_session, widget, crossing);
+
     return true;
 }
 
-static gboolean leave_event(GtkWidget *widget, GdkEventCrossing *crossing G_GNUC_UNUSED)
+static gboolean leave_event(GtkWidget *widget, GdkEventCrossing *crossing)
 {
     SpiceDisplay *display = SPICE_DISPLAY(widget);
     SpiceDisplayPrivate *d = SPICE_DISPLAY_GET_PRIVATE(display);
@@ -1418,6 +1420,8 @@ static gboolean leave_event(GtkWidget *widget, GdkEventCrossing *crossing G_GNUC
 
     d->mouse_have_pointer = false;
     try_keyboard_ungrab(display);
+
+    spice_gtk_session_pointer_leave(d->gtk_session, widget, crossing);
 
     return true;
 }
@@ -1618,7 +1622,8 @@ static gboolean button_event(GtkWidget *widget, GdkEventButton *button)
         return true;
 
     spicex_transform_input (display, button->x, button->y, &x, &y);
-    if ((x < 0 || x >= d->area.width ||
+    if (!button->send_event &&
+        (x < 0 || x >= d->area.width ||
          y < 0 || y >= d->area.height) &&
         d->mouse_mode == SPICE_MOUSE_MODE_CLIENT) {
         /* rule out clicks in outside region */
@@ -2579,4 +2584,3 @@ GdkPixbuf *spice_display_get_pixbuf(SpiceDisplay *display)
                                       (GdkPixbufDestroyNotify)g_free, NULL);
     return pixbuf;
 }
-

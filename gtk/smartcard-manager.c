@@ -616,6 +616,8 @@ GList *spice_smartcard_manager_get_readers(SpiceSmartcardManager *manager)
     VReaderList *vreader_list;
     VReaderListEntry *entry;
 
+    g_return_val_if_fail(SPICE_SMARTCARD_MANAGER(manager), NULL);
+
     vreader_list = vreader_get_reader_list();
 
     if (vreader_list == NULL)

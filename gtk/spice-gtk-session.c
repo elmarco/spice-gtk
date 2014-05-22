@@ -43,6 +43,7 @@
 #include "spice-session-priv.h"
 #include "spice-util-priv.h"
 #include "spice-channel-priv.h"
+#include "spice-widget-priv.h"
 
 #define CLIPBOARD_LAST (VD_AGENT_CLIPBOARD_SELECTION_SECONDARY + 1)
 
@@ -61,6 +62,10 @@ struct _SpiceGtkSessionPrivate {
     /* auto-usbredir related */
     gboolean                auto_usbredir_enable;
     int                     auto_usbredir_reqs;
+    GdkDragContext          *drag;
+    GtkTargetList           *drag_targets;
+    GdkEvent                *drag_event;
+    GtkDragResult            drag_result;
 };
 
 /**
@@ -791,24 +796,16 @@ cleanup:
     g_signal_handler_disconnect(s->main, agent_handler);
 }
 
-static void selection_get(GtkClipboard *clipboard,
-                          GtkSelectionData *selection_data,
-                          guint info, gpointer user_data)
+static void selection_request_remote(SpiceGtkSession *self,
+                                     GtkSelectionData *selection_data,
+                                     int selection)
 {
-    g_return_if_fail(SPICE_IS_GTK_SESSION(user_data));
-
-    RunInfo ri = { NULL, };
-    SpiceGtkSession *self = user_data;
     SpiceGtkSessionPrivate *s = self->priv;
+    RunInfo ri = { NULL, };
     gboolean agent_connected = FALSE;
     gulong clipboard_handler;
     gulong agent_handler;
-    int selection;
 
-    SPICE_DEBUG("selection get");
-
-    selection = get_selection_from_clipboard(s, clipboard);
-    g_return_if_fail(selection != -1);
     g_return_if_fail(s->main != NULL);
 
     ri.selection_data = selection_data;
@@ -845,6 +842,25 @@ cleanup:
     ri.loop = NULL;
     g_signal_handler_disconnect(s->main, clipboard_handler);
     g_signal_handler_disconnect(s->main, agent_handler);
+}
+
+static void selection_get(GtkClipboard *clipboard,
+                          GtkSelectionData *selection_data,
+                          guint info G_GNUC_UNUSED,
+                          gpointer user_data)
+{
+    g_return_if_fail(SPICE_IS_GTK_SESSION(user_data));
+
+    SpiceGtkSession *self = user_data;
+    SpiceGtkSessionPrivate *s = self->priv;
+    int selection;
+
+    SPICE_DEBUG("selection get");
+
+    selection = get_selection_from_clipboard(s, clipboard);
+    g_return_if_fail(selection != -1);
+
+    selection_request_remote(self, selection_data, selection);
 }
 
 static void clipboard_clear(GtkClipboard *clipboard, gpointer user_data)
@@ -927,6 +943,15 @@ static void selection_grab(SpiceMainChannel *main,
     CHANNEL_DEBUG(main, "selection grab %u", selection);
     for (i = 0; types[i]; i++)
         CHANNEL_DEBUG(main, "%s", types[i]);
+
+    if (selection == VD_AGENT_CLIPBOARD_SELECTION_DND) {
+        g_clear_pointer(&s->drag_targets, gtk_target_list_unref);
+        GtkTargetEntry targets[] = { { "STRING", 0, 0 } };
+        GtkTargetList *list = gtk_target_list_new(targets, 1);
+        s->drag_targets = list;
+        g_debug("dnd grab");
+        return;
+    }
 
     clipboard = get_clipboard_from_selection(s, selection);
     g_return_if_fail(clipboard != NULL);
@@ -1092,6 +1117,16 @@ static void clipboard_release(SpiceMainChannel *main, guint selection,
 
     SpiceGtkSession *self = user_data;
     SpiceGtkSessionPrivate *s = self->priv;
+
+    if (selection == VD_AGENT_CLIPBOARD_SELECTION_DND) {
+        g_debug("dnd release");
+        g_clear_pointer(&s->drag_targets, gtk_target_list_unref);
+        if (s->drag)
+            gdk_drag_abort(s->drag, 0);
+        s->drag = NULL;
+        return;
+    }
+
     GtkClipboard* clipboard = get_clipboard_from_selection(s, selection);
 
     if (!clipboard)
@@ -1203,8 +1238,199 @@ void spice_gtk_session_request_auto_usbredir(SpiceGtkSession *self,
         spice_desktop_integration_uninhibit_automount(desktop_int);
 }
 
+static void
+drag_data_get(GtkWidget        *widget,
+              GdkDragContext   *drag_context,
+              GtkSelectionData *selection_data,
+              guint             info,
+              guint             time,
+              gpointer          user_data)
+{
+    SpiceGtkSession *self = user_data;
+    g_debug("dnd data get");
+
+    selection_request_remote(self, selection_data, VD_AGENT_CLIPBOARD_SELECTION_DND);
+}
+
+static void
+drag_data_delete(GtkWidget        *widget,
+                 GdkDragContext   *drag_context,
+                 gpointer          user_data)
+{
+    g_debug("dnd data delete");
+}
+
+static gboolean
+drag_motion(GtkWidget      *widget,
+            GdkDragContext *drag_context,
+            gint            x,
+            gint            y,
+            guint           time,
+            gpointer        user_data)
+{
+    g_debug("dnd motion");
+
+    /* break the dnd */
+    GtkWidget *invisible = gtk_window_new(GTK_WINDOW_POPUP);
+    GdkDevice *device = gdk_drag_context_get_device(drag_context);
+    GdkGrabStatus status;
+
+    gtk_window_resize(GTK_WINDOW (invisible), 1, 1);
+    gtk_window_move(GTK_WINDOW (invisible), -99, -99);
+    gtk_widget_show(invisible);
+
+    status = gdk_device_grab(device, gtk_widget_get_window(invisible),
+                             GDK_OWNERSHIP_APPLICATION, TRUE,
+                             GDK_POINTER_MOTION_MASK |
+                             GDK_BUTTON_RELEASE_MASK,
+                             NULL, GDK_CURRENT_TIME);
+
+    gdk_device_ungrab(device, GDK_CURRENT_TIME);
+    g_warn_if_fail(status == GDK_GRAB_SUCCESS);
+
+    gtk_widget_destroy(invisible);
+
+    return TRUE;
+}
+
+static gboolean button_release_event(GtkWidget *source, GdkEventButton *button,
+                                     gpointer user_data)
+{
+    SpiceDisplay *widget = user_data;
+    SpiceGtkSession *self = widget->priv->gtk_session;
+    SpiceGtkSessionPrivate *s = self->priv;
+
+    /* when entering the widget again, grab breaks -> gtk_drag_end() and button is release */
+    g_message("button release %d %d", button->time, gtk_widget_has_grab(source));
+    if (button->time == 0)
+        return FALSE;
+
+    /* FIXME: should prevent further input before finishing */
+    g_debug("dnd button release %p", s->drag);
+    if (s->drag) {
+        g_return_val_if_fail(!s->drag_event, FALSE);
+        s->drag_event = gdk_event_copy((GdkEvent*)button);
+    }
+
+    return FALSE;
+}
+
+static void drag_end(GtkWidget      *source,
+                     GdkDragContext *drag_context,
+                     gpointer        user_data)
+{
+    GtkWidget *display = user_data;
+    SpiceGtkSession *self = SPICE_DISPLAY(display)->priv->gtk_session;
+    SpiceGtkSessionPrivate *s = self->priv;
+
+    gtk_widget_destroy(source);
+
+    if (s->drag != drag_context) {
+        SPICE_DEBUG("s->drag != drag_context");
+        return;
+    }
+
+    g_debug("dnd end");
+    s->drag = NULL;
+
+    if (s->drag_event) {
+        /* FIXME: release button or CANCEL*/
+        g_clear_pointer(&s->drag_event, gdk_event_free);
+
+        s->drag_event = gdk_event_new(GDK_KEY_PRESS);
+        s->drag_event->key.window = g_object_ref(gdk_screen_get_root_window (gtk_widget_get_screen (display)));
+        s->drag_event->key.send_event = TRUE;
+        s->drag_event->key.keyval = GDK_KEY_Escape;
+        s->drag_event->key.hardware_keycode = 9;
+        gtk_propagate_event(display, s->drag_event);
+        g_clear_pointer(&s->drag_event, gdk_event_free);
+
+        s->drag_event = gdk_event_new(GDK_KEY_RELEASE);
+        s->drag_event->key.window = g_object_ref(gdk_screen_get_root_window (gtk_widget_get_screen (display)));
+        s->drag_event->key.send_event = TRUE;
+        s->drag_event->key.keyval = GDK_KEY_Escape;
+        s->drag_event->key.hardware_keycode = 9;
+        gtk_propagate_event(display, s->drag_event);
+        g_clear_pointer(&s->drag_event, gdk_event_free);
+    }
+}
+
+static gboolean drag_failed(GtkWidget      *source,
+                            GdkDragContext *drag_context,
+                            GtkDragResult   result,
+                            gpointer        user_data)
+{
+    drag_end(source, drag_context, user_data);
+
+    return TRUE;
+}
+
 /* ------------------------------------------------------------------ */
 /* public functions                                                   */
+
+void spice_gtk_session_pointer_enter(SpiceGtkSession *self, GtkWidget *widget,
+                                     GdkEventCrossing *crossing)
+{
+    /* g_return_if_fail(SPICE_IS_GTK_SESSION(self)); */
+    /* g_return_if_fail(crossing != NULL); */
+
+    /* SpiceGtkSessionPrivate *s = self->priv; */
+
+    //    g_debug("= enter dnd: %p", s->drag);
+}
+
+void spice_gtk_session_pointer_leave(SpiceGtkSession *self, GtkWidget *widget,
+                                     GdkEventCrossing *crossing)
+{
+    g_return_if_fail(SPICE_IS_GTK_SESSION(self));
+    g_return_if_fail(crossing != NULL);
+
+    SpiceGtkSessionPrivate *s = self->priv;
+    g_return_if_fail(s->drag == NULL);
+
+    g_debug("= leave");
+
+    /* we use invisible widget to hold the source of the grab, so the
+       real source widget can be reentered */
+    GtkWidget *source = gtk_invisible_new();
+    gint button;
+
+    if (!s->drag_targets)
+        return;
+
+    if (crossing->state & GDK_BUTTON1_MASK)
+        button = 1;
+    else if (crossing->state & GDK_BUTTON2_MASK)
+        button = 2;
+    else if (crossing->state & GDK_BUTTON2_MASK)
+        button = 3;
+    else
+        return;
+
+    g_signal_connect(source, "button-release-event", G_CALLBACK(button_release_event), widget);
+    g_signal_connect(source, "drag-data-get", G_CALLBACK(drag_data_get), self);
+    g_signal_connect(source, "drag-data-delete", G_CALLBACK(drag_data_delete), self);
+    g_signal_connect(source, "drag-failed", G_CALLBACK(drag_failed), widget);
+    g_signal_connect(source, "drag-end", G_CALLBACK(drag_end), widget);
+
+    s->drag_result = GTK_DRAG_RESULT_SUCCESS;
+    s->drag = gtk_drag_begin(source, s->drag_targets, GDK_ACTION_COPY, button,
+                                              (GdkEvent*)crossing);
+    if (!s->drag) {
+        /* a drag or a grab may already be on going */
+        gtk_widget_destroy(source);
+        return;
+    }
+
+    g_object_add_weak_pointer(G_OBJECT(s->drag), (gpointer *)&s->drag);
+
+    /* make ourself a dest too, to break dnd when entering again */
+    /* FIXME: for all displays */
+    gtk_drag_dest_set(widget, GTK_DEST_DEFAULT_ALL,
+                      NULL, 0, GDK_ACTION_COPY);
+    gtk_drag_dest_set_target_list(widget, s->drag_targets);
+    g_signal_connect(widget, "drag-motion", G_CALLBACK(drag_motion), self);
+}
 
 /**
  * spice_gtk_session_get:

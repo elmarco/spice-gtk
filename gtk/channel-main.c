@@ -1909,6 +1909,10 @@ static void handle_any_clipboard(SpiceMainChannel *self, guint selection,
                                 selection, type);
         break;
     }
+    case VD_AGENT_CLIPBOARD_RELEASE: {
+        g_coroutine_signal_emit(self, signals[SPICE_MAIN_CLIPBOARD_SELECTION_RELEASE], 0, selection);
+        break;
+    }
     default:
         g_warn_if_reached();
     }
@@ -2035,8 +2039,10 @@ static void main_agent_handle_msg(SpiceChannel *channel,
         break;
     }
     case VD_AGENT_FILE_XFER_STATUS:
+    {
         file_xfer_handle_status(self, payload);
         break;
+    }
     default:
         g_warning("unhandled agent message type: %u (%s), size %u",
                   msg->type, NAME(agent_msg_types, msg->type), msg->size);
