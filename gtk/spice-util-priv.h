@@ -32,6 +32,7 @@ gchar* spice_unix2dos(const gchar *str, gssize len, GError **error);
 gchar* spice_dos2unix(const gchar *str, gssize len, GError **error);
 void spice_mono_edge_highlight(unsigned width, unsigned hight,
                                const guint8 *and, const guint8 *xor, guint8 *dest);
+GStrv strv_from_data(char *data, gsize len, gssize *pos);
 
 #if GLIB_CHECK_VERSION(2,32,0)
 #define STATIC_MUTEX            GMutex

@@ -194,6 +194,37 @@ static void test_mono_edge_highlight(void)
     }
 }
 
+static gboolean
+ignore_warning(const gchar *log_domain,
+               GLogLevelFlags log_level,
+               const gchar *message,
+               gpointer user_data)
+{
+    return FALSE;
+}
+
+static void test_strv_from_data(void)
+{
+    GStrv strv;
+    gssize n;
+
+    g_test_log_set_fatal_handler(ignore_warning, NULL);
+
+    strv = strv_from_data("a\0bc\0\0", 6, &n);
+    g_assert_cmpint(g_strv_length(strv), ==, 2);
+    g_assert_cmpint(n, ==, 6);
+    g_strfreev(strv);
+
+    strv = strv_from_data("\0\0", 2, &n);
+    g_assert_cmpint(g_strv_length(strv), ==, 1);
+    g_assert_cmpint(n, ==, 2);
+    g_strfreev(strv);
+
+    strv = strv_from_data("ab", 2, &n);
+    g_assert_cmpint(g_strv_length(strv), ==, 0);
+    g_strfreev(strv);
+}
+
 int main(int argc, char* argv[])
 {
   g_test_init(&argc, &argv, NULL);
@@ -201,6 +232,7 @@ int main(int argc, char* argv[])
   g_test_add_func("/util/dos2unix", test_dos2unix);
   g_test_add_func("/util/unix2dos", test_unix2dos);
   g_test_add_func("/util/mono_edge_highlight", test_mono_edge_highlight);
+  g_test_add_func("/util/strv_from_data", test_strv_from_data);
 
   return g_test_run ();
 }

@@ -497,3 +497,41 @@ void spice_mono_edge_highlight(unsigned width, unsigned height,
         xor += bpl;
     }
 }
+
+GStrv strv_from_data(char *data, gsize len, gssize *pos)
+{
+    GStrv strv;
+    gssize i, n;
+
+    g_return_val_if_fail(len >= 2, NULL);
+
+    for (i = 0, n = 0; i < len; i++) {
+        if (data[i])
+            continue;
+
+        if (i >= 1 && !data[i-1])
+            break;
+        n++;
+    }
+
+    g_return_val_if_fail(i < len, NULL);
+
+    strv = g_new0(gchar *, n + 1);
+    strv[n] = NULL;
+
+    for (i = 0, n = 0; i < len; i++) {
+        if (!data[i] && i >= 1 && !data[i-1])
+            break;
+
+        if (!strv[n])
+            strv[n] = g_strndup(data + i, len - i);
+
+        if (!data[i])
+            n++;
+    }
+
+    if (pos)
+        *pos = i + 1;
+
+    return strv;
+}
