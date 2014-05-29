@@ -1746,66 +1746,18 @@ static void spice_main_set_max_clipboard(SpiceMainChannel *self, gint max)
     spice_channel_wakeup(SPICE_CHANNEL(self), FALSE);
 }
 
-/* coroutine context */
-static void main_agent_handle_msg(SpiceChannel *channel,
-                                  VDAgentMessage *msg, gpointer payload)
+static void handle_clipboard(SpiceMainChannel *self,
+                             VDAgentMessage *msg, gpointer payload)
 {
-    SpiceMainChannel *self = SPICE_MAIN_CHANNEL(channel);
-    SpiceMainChannelPrivate *c = self->priv;
     guint8 selection = VD_AGENT_CLIPBOARD_SELECTION_CLIPBOARD;
 
-    g_return_if_fail(msg->protocol == VD_AGENT_PROTOCOL);
-
-    switch (msg->type) {
-    case VD_AGENT_CLIPBOARD_RELEASE:
-    case VD_AGENT_CLIPBOARD_REQUEST:
-    case VD_AGENT_CLIPBOARD_GRAB:
-    case VD_AGENT_CLIPBOARD:
-        if (test_agent_cap(self, VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
-            selection = *((guint8*)payload);
-            payload = ((guint8*)payload) + 4;
-            msg->size -= 4;
-        }
-        break;
-    default:
-        break;
+    if (test_agent_cap(self, VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+        selection = *((guint8*)payload);
+        payload = ((guint8*)payload) + 4;
+        msg->size -= 4;
     }
 
     switch (msg->type) {
-    case VD_AGENT_ANNOUNCE_CAPABILITIES:
-    {
-        VDAgentAnnounceCapabilities *caps = payload;
-        int i, size;
-
-        size = VD_AGENT_CAPS_SIZE_FROM_MSG_SIZE(msg->size);
-        if (size > VD_AGENT_CAPS_SIZE)
-            size = VD_AGENT_CAPS_SIZE;
-        memset(c->agent_caps, 0, sizeof(c->agent_caps));
-        for (i = 0; i < size * 32; i++) {
-            if (!VD_AGENT_HAS_CAPABILITY(caps->caps, size, i))
-                continue;
-            SPICE_DEBUG("%s: cap: %d (%s)", __FUNCTION__,
-                        i, NAME(agent_caps, i));
-            VD_AGENT_SET_CAPABILITY(c->agent_caps, i);
-        }
-        c->agent_caps_received = true;
-        g_coroutine_signal_emit(self, signals[SPICE_MAIN_AGENT_UPDATE], 0);
-
-        if (caps->request)
-            agent_announce_caps(self);
-
-        if (test_agent_cap(self, VD_AGENT_CAP_DISPLAY_CONFIG) &&
-            !c->agent_display_config_sent) {
-            agent_display_config(self);
-            c->agent_display_config_sent = true;
-        }
-
-        agent_max_clipboard(self);
-
-        agent_send_msg_queue(self);
-
-        break;
-    }
     case VD_AGENT_CLIPBOARD:
     {
         VDAgentClipboard *cb = payload;
@@ -1847,6 +1799,61 @@ static void main_agent_handle_msg(SpiceChannel *channel,
             g_coroutine_signal_emit(self, signals[SPICE_MAIN_CLIPBOARD_RELEASE], 0);
         break;
     }
+    default:
+        g_warn_if_reached();
+    }
+}
+
+/* coroutine context */
+static void main_agent_handle_msg(SpiceChannel *channel,
+                                  VDAgentMessage *msg, gpointer payload)
+{
+    SpiceMainChannel *self = SPICE_MAIN_CHANNEL(channel);
+    SpiceMainChannelPrivate *c = self->priv;
+
+    g_return_if_fail(msg->protocol == VD_AGENT_PROTOCOL);
+
+    switch (msg->type) {
+    case VD_AGENT_ANNOUNCE_CAPABILITIES:
+    {
+        VDAgentAnnounceCapabilities *caps = payload;
+        int i, size;
+
+        size = VD_AGENT_CAPS_SIZE_FROM_MSG_SIZE(msg->size);
+        if (size > VD_AGENT_CAPS_SIZE)
+            size = VD_AGENT_CAPS_SIZE;
+        memset(c->agent_caps, 0, sizeof(c->agent_caps));
+        for (i = 0; i < size * 32; i++) {
+            if (!VD_AGENT_HAS_CAPABILITY(caps->caps, size, i))
+                continue;
+            SPICE_DEBUG("%s: cap: %d (%s)", __FUNCTION__,
+                        i, NAME(agent_caps, i));
+            VD_AGENT_SET_CAPABILITY(c->agent_caps, i);
+        }
+        c->agent_caps_received = true;
+        g_coroutine_signal_emit(self, signals[SPICE_MAIN_AGENT_UPDATE], 0);
+
+        if (caps->request)
+            agent_announce_caps(self);
+
+        if (test_agent_cap(self, VD_AGENT_CAP_DISPLAY_CONFIG) &&
+            !c->agent_display_config_sent) {
+            agent_display_config(self);
+            c->agent_display_config_sent = true;
+        }
+
+        agent_max_clipboard(self);
+
+        agent_send_msg_queue(self);
+
+        break;
+    }
+    case VD_AGENT_CLIPBOARD:
+    case VD_AGENT_CLIPBOARD_GRAB:
+    case VD_AGENT_CLIPBOARD_REQUEST:
+    case VD_AGENT_CLIPBOARD_RELEASE:
+        handle_clipboard(self, msg, payload);
+        break;
     case VD_AGENT_REPLY:
     {
         VDAgentReply *reply = payload;
