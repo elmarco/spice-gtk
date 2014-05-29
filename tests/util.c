@@ -225,6 +225,22 @@ static void test_strv_from_data(void)
     g_strfreev(strv);
 }
 
+static void test_str_from_data(void)
+{
+    char *str;
+    gssize n;
+
+    g_test_log_set_fatal_handler(ignore_warning, NULL);
+
+    str = str_from_data("a\0", 2, &n);
+    g_assert_cmpstr(str, ==, "a");
+    g_assert_cmpint(n, ==, 2);
+    g_free(str);
+
+    str = str_from_data("ab", 2, &n);
+    g_assert(!str);
+}
+
 int main(int argc, char* argv[])
 {
   g_test_init(&argc, &argv, NULL);
@@ -233,6 +249,7 @@ int main(int argc, char* argv[])
   g_test_add_func("/util/unix2dos", test_unix2dos);
   g_test_add_func("/util/mono_edge_highlight", test_mono_edge_highlight);
   g_test_add_func("/util/strv_from_data", test_strv_from_data);
+  g_test_add_func("/util/str_from_data", test_str_from_data);
 
   return g_test_run ();
 }

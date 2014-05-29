@@ -535,3 +535,23 @@ GStrv strv_from_data(char *data, gsize len, gssize *pos)
 
     return strv;
 }
+
+gchar* str_from_data(char *data, gsize len, gssize *pos)
+{
+    gchar *str;
+    int i;
+
+    g_return_val_if_fail(len >= 1, NULL);
+
+    for (i = 0; i < len; i++)
+        if (!data[i])
+            break;
+
+    g_return_val_if_fail(i < len, NULL);
+
+    str = g_strdup(data);
+    if (pos)
+        *pos = strlen(str) + 1;
+
+    return str;
+}
