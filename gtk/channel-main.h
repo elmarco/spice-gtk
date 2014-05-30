@@ -79,6 +79,10 @@ void spice_main_clipboard_selection_release(SpiceMainChannel *channel, guint sel
 void spice_main_clipboard_selection_notify(SpiceMainChannel *channel, guint selection, guint32 type, const guchar *data, size_t size);
 void spice_main_clipboard_selection_request(SpiceMainChannel *channel, guint selection, guint32 type);
 
+void spice_main_selection_grab(SpiceMainChannel *channel, guint selection, const GStrv types);
+void spice_main_selection_data(SpiceMainChannel *channel, guint selection, const gchar *type, const guchar *data, gsize size);
+void spice_main_selection_request(SpiceMainChannel *channel, guint selection, const gchar *type);
+
 gboolean spice_main_agent_test_capability(SpiceMainChannel *channel, guint32 cap);
 void spice_main_file_copy_async(SpiceMainChannel *channel,
                                 GFile **sources,

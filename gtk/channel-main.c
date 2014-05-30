@@ -1235,7 +1235,7 @@ static void agent_announce_caps(SpiceMainChannel *channel)
 /* any context: the message is not flushed immediately,
    you can wakeup() the channel coroutine or send_msg_queue() */
 static void agent_clipboard_grab(SpiceMainChannel *channel, guint selection,
-                                 guint32 *types, int ntypes)
+                                 guint32 *types, int ntypes, GStrv stypes)
 {
     SpiceMainChannelPrivate *c = channel->priv;
     guint8 *msg;
@@ -1248,7 +1248,7 @@ static void agent_clipboard_grab(SpiceMainChannel *channel, guint selection,
 
     g_return_if_fail(test_agent_cap(channel, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND));
 
-    size = sizeof(VDAgentClipboardGrab) + sizeof(uint32_t) * ntypes;
+    size = sizeof(VDAgentClipboardGrab);
     if (test_agent_cap(channel, VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
         size += 4;
     } else if (selection != VD_AGENT_CLIPBOARD_SELECTION_CLIPBOARD) {
@@ -1256,18 +1256,36 @@ static void agent_clipboard_grab(SpiceMainChannel *channel, guint selection,
         return;
     }
 
+    if (stypes) {
+        g_return_if_fail(test_agent_cap(channel, VD_AGENT_CAP_ANY_SELECTION_TYPE));
+
+        for (i = 0; stypes[i]; i++)
+            size += strlen(stypes[i]) + 1;
+        size += 1;
+    } else {
+        size += sizeof(uint32_t) * ntypes;
+    }
+
     msg = g_alloca(size);
     memset(msg, 0, size);
-
-    grab = (VDAgentClipboardGrab *)msg;
 
     if (test_agent_cap(channel, VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
         msg[0] = selection;
         grab = (VDAgentClipboardGrab *)(msg + 4);
+    } else {
+        grab = (VDAgentClipboardGrab *)msg;
     }
 
-    for (i = 0; i < ntypes; i++) {
-        grab->types[i] = types[i];
+
+    if (stypes) {
+        char *dest = (char*)grab;
+        for (i = 0; stypes[i]; i++) {
+            strcpy(dest, stypes[i]);
+            dest += strlen(stypes[i]) + 1;
+        }
+    } else {
+        for (i = 0; i < ntypes; i++)
+            grab->types[i] = types[i];
     }
 
     agent_msg_queue(channel, VD_AGENT_CLIPBOARD_GRAB, size, msg);
@@ -1276,7 +1294,8 @@ static void agent_clipboard_grab(SpiceMainChannel *channel, guint selection,
 /* any context: the message is not flushed immediately,
    you can wakeup() the channel coroutine or send_msg_queue() */
 static void agent_clipboard_notify(SpiceMainChannel *self, guint selection,
-                                   guint32 type, const guchar *data, size_t size)
+                                   guint32 type, const gchar *stype,
+                                   const guchar *data, size_t size)
 {
     SpiceMainChannelPrivate *c = self->priv;
     VDAgentClipboard *cb;
@@ -1296,6 +1315,13 @@ static void agent_clipboard_notify(SpiceMainChannel *self, guint selection,
         return;
     }
 
+    if (stype) {
+        g_return_if_fail(test_agent_cap(self, VD_AGENT_CAP_ANY_SELECTION_TYPE));
+
+        /* str + \0 - uint32 type */
+        msgsize += strlen(stype) + 1 - sizeof(guint32);
+    }
+
     msg = g_alloca(msgsize);
     memset(msg, 0, msgsize);
 
@@ -1306,13 +1332,18 @@ static void agent_clipboard_notify(SpiceMainChannel *self, guint selection,
         cb = (VDAgentClipboard *)(msg + 4);
     }
 
-    cb->type = type;
+    if (stype) {
+        strcpy((char*)cb, stype);
+    } else {
+        cb->type = type;
+    }
     agent_msg_queue_many(self, VD_AGENT_CLIPBOARD, msg, msgsize, data, size, NULL);
 }
 
 /* any context: the message is not flushed immediately,
    you can wakeup() the channel coroutine or send_msg_queue() */
-static void agent_clipboard_request(SpiceMainChannel *channel, guint selection, guint32 type)
+static void agent_clipboard_request(SpiceMainChannel *channel, guint selection,
+                                    guint32 type, const gchar *stype)
 {
     SpiceMainChannelPrivate *c = channel->priv;
     VDAgentClipboardRequest *request;
@@ -1330,6 +1361,13 @@ static void agent_clipboard_request(SpiceMainChannel *channel, guint selection, 
         return;
     }
 
+    if (stype) {
+        g_return_if_fail(test_agent_cap(channel, VD_AGENT_CAP_ANY_SELECTION_TYPE));
+
+        /* str + \0 - uint32 type */
+        msgsize += strlen(stype) + 1 - sizeof(guint32);
+    }
+
     msg = g_alloca(msgsize);
     memset(msg, 0, msgsize);
 
@@ -1340,7 +1378,11 @@ static void agent_clipboard_request(SpiceMainChannel *channel, guint selection, 
         request = (VDAgentClipboardRequest *)(msg + 4);
     }
 
-    request->type = type;
+    if (stype) {
+        strcpy((char*)request, stype);
+    } else {
+        request->type = type;
+    }
 
     agent_msg_queue(channel, VD_AGENT_CLIPBOARD_REQUEST, msgsize, msg);
 }
@@ -2612,7 +2654,7 @@ void spice_main_clipboard_selection_grab(SpiceMainChannel *channel, guint select
     g_return_if_fail(channel != NULL);
     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
 
-    agent_clipboard_grab(channel, selection, types, ntypes);
+    agent_clipboard_grab(channel, selection, types, ntypes, NULL);
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
 }
 
@@ -2690,7 +2732,7 @@ void spice_main_clipboard_selection_notify(SpiceMainChannel *channel, guint sele
     g_return_if_fail(channel != NULL);
     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
 
-    agent_clipboard_notify(channel, selection, type, data, size);
+    agent_clipboard_notify(channel, selection, type, NULL, data, size);
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
 }
 
@@ -2725,7 +2767,7 @@ void spice_main_clipboard_selection_request(SpiceMainChannel *channel, guint sel
     g_return_if_fail(channel != NULL);
     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
 
-    agent_clipboard_request(channel, selection, type);
+    agent_clipboard_request(channel, selection, type, NULL);
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
 }
 
@@ -2996,3 +3038,27 @@ gboolean spice_main_file_copy_finish(SpiceMainChannel *channel,
 
     return g_simple_async_result_get_op_res_gboolean(simple);
 }
+
+ void spice_main_selection_grab(SpiceMainChannel *channel, guint selection, const GStrv types)
+ {
+     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+
+     agent_clipboard_grab(channel, selection, NULL, -1, types);
+     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
+ }
+
+ void spice_main_selection_data(SpiceMainChannel *channel, guint selection, const gchar *type, const guchar *data, gsize size)
+ {
+     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+
+     agent_clipboard_notify(channel, selection, -1, type, data, size);
+     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
+ }
+
+ void spice_main_selection_request(SpiceMainChannel *channel, guint selection, const gchar *type)
+ {
+     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+
+     agent_clipboard_request(channel, selection, -1, type);
+     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
+ }
