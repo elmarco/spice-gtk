@@ -824,6 +824,18 @@ skip_grab_clipboard:
     return TRUE;
 }
 
+static void selection_grab(SpiceMainChannel *main,
+                           guint selection,
+                           GStrv types,
+                           gpointer user_data)
+{
+    int i;
+
+    CHANNEL_DEBUG(main, "selection grab %u", selection);
+    for (i = 0; types[i]; i++)
+        CHANNEL_DEBUG(main, "%s", types[i]);
+}
+
 static void clipboard_received_cb(GtkClipboard *clipboard,
                                   GtkSelectionData *selection_data,
                                   gpointer user_data)
@@ -931,6 +943,12 @@ static gboolean clipboard_request(SpiceMainChannel *main, guint selection,
     return TRUE;
 }
 
+static void selection_request(SpiceMainChannel *main, guint selection,
+                              const gchar *type, gpointer user_data)
+{
+    CHANNEL_DEBUG(main, "selection request %u:%s", selection, type);
+}
+
 static void clipboard_release(SpiceMainChannel *main, guint selection,
                               gpointer user_data)
 {
@@ -968,6 +986,11 @@ static void channel_new(SpiceSession *session, SpiceChannel *channel,
                          G_CALLBACK(clipboard_request), self);
         g_signal_connect(channel, "main-clipboard-selection-release",
                          G_CALLBACK(clipboard_release), self);
+
+        g_signal_connect(channel, "selection-grab",
+                         G_CALLBACK(selection_grab), self);
+        g_signal_connect(channel, "selection-request",
+                         G_CALLBACK(selection_request), self);
     }
     if (SPICE_IS_INPUTS_CHANNEL(channel)) {
         spice_g_signal_connect_object(channel, "inputs-modifiers",

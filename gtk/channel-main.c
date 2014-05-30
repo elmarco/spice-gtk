@@ -156,6 +156,10 @@ enum {
     SPICE_MAIN_CLIPBOARD_SELECTION_REQUEST,
     SPICE_MAIN_CLIPBOARD_SELECTION_RELEASE,
     SPICE_MIGRATION_STARTED,
+    SPICE_SELECTION_DATA,
+    SPICE_SELECTION_GRAB,
+    SPICE_SELECTION_REQUEST,
+
     SPICE_MAIN_LAST_SIGNAL,
 };
 
@@ -201,6 +205,7 @@ static const char *agent_caps[] = {
     [ VD_AGENT_CAP_GUEST_LINEEND_LF    ] = "line-end lf",
     [ VD_AGENT_CAP_GUEST_LINEEND_CRLF  ] = "line-end crlf",
     [ VD_AGENT_CAP_MAX_CLIPBOARD       ] = "max-clipboard",
+    [ VD_AGENT_CAP_ANY_SELECTION_TYPE  ] = "any selection type",
 };
 #define NAME(_a, _i) ((_i) < SPICE_N_ELEMENTS(_a) ? (_a[(_i)] ?: "?") : "?")
 
@@ -639,6 +644,11 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * @data: clipboard data
      * @size: size of @data in bytes
      *
+     * <note><para>
+     *   This API is kept for compatibility with older Spice agent,
+     *   it is recommended to use the MIME version instead.
+     * </para></note>
+     *
      * Since: 0.6
      **/
     signals[SPICE_MAIN_CLIPBOARD_SELECTION] =
@@ -651,6 +661,27 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
                      G_TYPE_NONE,
                      4,
                      G_TYPE_UINT, G_TYPE_UINT, G_TYPE_POINTER, G_TYPE_UINT);
+
+    /**
+     * SpiceMainChannel::selection-data:
+     * @main: the #SpiceMainChannel that emitted the signal
+     * @selection: a VD_AGENT_CLIPBOARD_SELECTION
+     * @type: the MIME data type
+     * @data: clipboard data
+     * @size: size of @data in bytes
+     *
+     * Since: 0.26
+     **/
+    signals[SPICE_SELECTION_DATA] =
+        g_signal_new("selection-data",
+                     G_OBJECT_CLASS_TYPE(gobject_class),
+                     G_SIGNAL_RUN_LAST,
+                     0,
+                     NULL, NULL,
+                     g_cclosure_user_marshal_VOID__UINT_STRING_POINTER_UINT,
+                     G_TYPE_NONE,
+                     4,
+                     G_TYPE_UINT, G_TYPE_STRING, G_TYPE_POINTER, G_TYPE_UINT);
 
     /**
      * SpiceMainChannel::main-clipboard-grab:
@@ -684,6 +715,11 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * Inform when clipboard data is available from the guest, and for
      * which @types.
      *
+     * <note><para>
+     *   This API is kept for compatibility with older Spice agent,
+     *   it is recommended to use the MIME version instead.
+     * </para></note>
+     *
      * Since: 0.6
      **/
     signals[SPICE_MAIN_CLIPBOARD_SELECTION_GRAB] =
@@ -696,6 +732,28 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
                      G_TYPE_BOOLEAN,
                      3,
                      G_TYPE_UINT, G_TYPE_POINTER, G_TYPE_UINT);
+
+    /**
+     * SpiceMainChannel::selection-grab:
+     * @main: the #SpiceMainChannel that emitted the signal
+     * @selection: a VD_AGENT_CLIPBOARD_SELECTION
+     * @types: the MIME types
+     *
+     * Inform when clipboard data is available from the guest, and for
+     * which @types.
+     *
+     * Since: 0.26
+     **/
+    signals[SPICE_SELECTION_GRAB] =
+        g_signal_new("selection-grab",
+                     G_OBJECT_CLASS_TYPE(gobject_class),
+                     G_SIGNAL_RUN_LAST,
+                     0,
+                     NULL, NULL,
+                     g_cclosure_user_marshal_VOID__UINT_BOXED,
+                     G_TYPE_NONE,
+                     2,
+                     G_TYPE_UINT, G_TYPE_STRV);
 
     /**
      * SpiceMainChannel::main-clipboard-request:
@@ -723,11 +781,16 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * SpiceMainChannel::main-clipboard-selection-request:
      * @main: the #SpiceMainChannel that emitted the signal
      * @selection: a VD_AGENT_CLIPBOARD_SELECTION clipboard
-     * @types: the VD_AGENT_CLIPBOARD request type
+     * @type: the VD_AGENT_CLIPBOARD request type
      *
      * Return value: %TRUE if the request is successful
      *
      * Request clipbard data from the client.
+     *
+     * <note><para>
+     *   This API is kept for compatibility with older Spice agent,
+     *   it is recommended to use the MIME version instead.
+     * </para></note>
      *
      * Since: 0.6
      **/
@@ -741,6 +804,27 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
                      G_TYPE_BOOLEAN,
                      2,
                      G_TYPE_UINT, G_TYPE_UINT);
+
+    /**
+     * SpiceMainChannel::selection-request:
+     * @main: the #SpiceMainChannel that emitted the signal
+     * @selection: a VD_AGENT_CLIPBOARD_SELECTION
+     * @type: the MIME request type
+     *
+     * Request clipbard data from the client.
+     *
+     * Since: 0.26
+     **/
+    signals[SPICE_SELECTION_REQUEST] =
+        g_signal_new("selection-request",
+                     G_OBJECT_CLASS_TYPE(gobject_class),
+                     G_SIGNAL_RUN_LAST,
+                     0,
+                     NULL, NULL,
+                     g_cclosure_user_marshal_VOID__UINT_STRING,
+                     G_TYPE_NONE,
+                     2,
+                     G_TYPE_UINT, G_TYPE_STRING);
 
     /**
      * SpiceMainChannel::main-clipboard-release:
@@ -1142,6 +1226,7 @@ static void agent_announce_caps(SpiceMainChannel *channel)
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_DISPLAY_CONFIG);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_SELECTION);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_ANY_SELECTION_TYPE);
 
     agent_msg_queue(channel, VD_AGENT_ANNOUNCE_CAPABILITIES, size, caps);
     free(caps);
@@ -1746,6 +1831,47 @@ static void spice_main_set_max_clipboard(SpiceMainChannel *self, gint max)
     spice_channel_wakeup(SPICE_CHANNEL(self), FALSE);
 }
 
+static void handle_any_clipboard(SpiceMainChannel *self, guint selection,
+                                 int msg_type, char *data, gsize len)
+{
+    GStrv types;
+    gchar *type;
+    gssize pos;
+
+    switch (msg_type) {
+    case VD_AGENT_CLIPBOARD: {
+        type = str_from_data(data, len, &pos);
+        g_return_if_fail(type);
+        data += pos;
+        len -= pos;
+
+        g_coroutine_signal_emit(self, signals[SPICE_SELECTION_DATA], 0,
+                                selection, type, data, len);
+        g_free(type);
+        break;
+    }
+    case VD_AGENT_CLIPBOARD_GRAB: {
+        types = strv_from_data(data, len, NULL);
+        g_return_if_fail(types);
+
+        g_coroutine_signal_emit(self, signals[SPICE_SELECTION_GRAB], 0,
+                                selection, types);
+        g_strfreev(types);
+        break;
+    }
+    case VD_AGENT_CLIPBOARD_REQUEST: {
+        type = str_from_data(data, len, &pos);
+        g_return_if_fail(type);
+
+        g_coroutine_signal_emit(self, signals[SPICE_SELECTION_REQUEST], 0,
+                                selection, type);
+        break;
+    }
+    default:
+        g_warn_if_reached();
+    }
+}
+
 static void handle_clipboard(SpiceMainChannel *self,
                              VDAgentMessage *msg, gpointer payload)
 {
@@ -1755,6 +1881,11 @@ static void handle_clipboard(SpiceMainChannel *self,
         selection = *((guint8*)payload);
         payload = ((guint8*)payload) + 4;
         msg->size -= 4;
+    }
+
+    if (test_agent_cap(self, VD_AGENT_CAP_ANY_SELECTION_TYPE)) {
+        handle_any_clipboard(self, selection, msg->type, payload, msg->size);
+        return;
     }
 
     switch (msg->type) {
