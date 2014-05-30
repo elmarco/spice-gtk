@@ -2653,6 +2653,7 @@ void spice_main_clipboard_selection_grab(SpiceMainChannel *channel, guint select
 {
     g_return_if_fail(channel != NULL);
     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+    g_return_if_fail(!test_agent_cap(channel, VD_AGENT_CAP_ANY_SELECTION_TYPE));
 
     agent_clipboard_grab(channel, selection, types, ntypes, NULL);
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
@@ -2731,6 +2732,7 @@ void spice_main_clipboard_selection_notify(SpiceMainChannel *channel, guint sele
 {
     g_return_if_fail(channel != NULL);
     g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+    g_return_if_fail(!test_agent_cap(channel, VD_AGENT_CAP_ANY_SELECTION_TYPE));
 
     agent_clipboard_notify(channel, selection, type, NULL, data, size);
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
@@ -3042,6 +3044,7 @@ gboolean spice_main_file_copy_finish(SpiceMainChannel *channel,
  void spice_main_selection_grab(SpiceMainChannel *channel, guint selection, const GStrv types)
  {
      g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+     g_return_if_fail(test_agent_cap(channel, VD_AGENT_CAP_ANY_SELECTION_TYPE));
 
      agent_clipboard_grab(channel, selection, NULL, -1, types);
      spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
@@ -3050,6 +3053,7 @@ gboolean spice_main_file_copy_finish(SpiceMainChannel *channel,
  void spice_main_selection_data(SpiceMainChannel *channel, guint selection, const gchar *type, const guchar *data, gsize size)
  {
      g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+     g_return_if_fail(test_agent_cap(channel, VD_AGENT_CAP_ANY_SELECTION_TYPE));
 
      agent_clipboard_notify(channel, selection, -1, type, data, size);
      spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
@@ -3058,6 +3062,7 @@ gboolean spice_main_file_copy_finish(SpiceMainChannel *channel,
  void spice_main_selection_request(SpiceMainChannel *channel, guint selection, const gchar *type)
  {
      g_return_if_fail(SPICE_IS_MAIN_CHANNEL(channel));
+     g_return_if_fail(test_agent_cap(channel, VD_AGENT_CAP_ANY_SELECTION_TYPE));
 
      agent_clipboard_request(channel, selection, -1, type);
      spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
