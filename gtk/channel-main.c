@@ -2788,6 +2788,7 @@ static void file_xfer_send_start_msg_async(SpiceMainChannel *channel,
  * When the operation is finished, callback will be called. You can then call
  * spice_main_file_copy_finish() to get the result of the operation.
  *
+ * Since: 0.17
  **/
 void spice_main_file_copy_async(SpiceMainChannel *channel,
                                 GFile **sources,
@@ -2836,6 +2837,7 @@ void spice_main_file_copy_async(SpiceMainChannel *channel,
  * Finishes copying the file started with
  * spice_main_file_copy_async().
  *
+ * Since: 0.17
  * Returns: a %TRUE on success, %FALSE on error.
  **/
 gboolean spice_main_file_copy_finish(SpiceMainChannel *channel,
