@@ -289,6 +289,29 @@ fi
 AS_IF([test "x$have_phodav" = "xyes"],
        AC_DEFINE([USE_PHODAV], [1], [Define if supporting phodav]))
 
+AC_ARG_ENABLE([egl],
+  AS_HELP_STRING([--enable-egl=@<:@auto/yes/no@:>@],
+  [Enable egl support @<:@default=auto@:>@]),
+  [],
+  [enable_egl="auto"])
+
+if test "x$enable_egl" = "xno"; then
+  have_egl="no"
+else
+  PKG_CHECK_MODULES(EGL, [egl], [have_egl=yes], [have_egl=no])
+  AC_SUBST(EGL_CFLAGS)
+  AC_SUBST(EGL_LIBS)
+
+  if test "x$have_egl" = "xno" && test "x$enable_egl" = "xyes"; then
+    AC_MSG_ERROR([egl support explicitly requested, but required package is not available])
+  fi
+fi
+AS_IF([test "x$have_egl" = "xyes"],
+  AC_DEFINE(USE_EGL, [1], [Define if supporting egl]))
+
+AM_CONDITIONAL([WITH_EGL], [test "x$have_egl" = "xyes"])
+
+
 AC_ARG_WITH([audio],
   AS_HELP_STRING([--with-audio=@<:@gstreamer/pulse/auto/no@:>@], [Select audio backend @<:@default=auto@:>@]),
   [],
@@ -773,6 +796,7 @@ AC_MSG_NOTICE([
         DBus:                     ${have_dbus}
         WebDAV support:           ${have_phodav}
         LZ4 support:              ${enable_lz4}
+        EGL:                      ${have_egl}
 
         Now type 'make' to build $PACKAGE
 

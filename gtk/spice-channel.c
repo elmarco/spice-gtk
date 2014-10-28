@@ -45,7 +45,9 @@
 #include <arpa/inet.h>
 #endif
 #include <ctype.h>
-
+#ifdef G_OS_UNIX
+#include <gio/gunixfdmessage.h>
+#endif
 #include "gio-coroutine.h"
 
 static void spice_channel_handle_msg(SpiceChannel *channel, SpiceMsgIn *msg);
@@ -865,6 +867,59 @@ static void spice_channel_write_msg(SpiceChannel *channel, SpiceMsgOut *out)
 
     spice_msg_out_unref(out);
 }
+
+#ifdef G_OS_UNIX
+gint spice_channel_unix_read_fd(SpiceChannel *channel)
+{
+    SpiceChannelPrivate *c = channel->priv;
+    GError *error = NULL;
+    gint *fds = NULL;
+    gint fd = -1;
+    gint num_fds = 0;
+    GSocketControlMessage **msg = NULL;
+    gint i, num_msg = 0;
+
+    g_return_val_if_fail(g_socket_get_family(c->sock) == G_SOCKET_FAMILY_UNIX, -1);
+
+    while (1) {
+        if (g_socket_receive_message(c->sock, NULL, NULL, 0,
+                                     &msg, &num_msg, 0,
+                                     NULL, &error) > 0)
+            break;
+
+        if (!error) {
+            CHANNEL_DEBUG(channel, "disconnection while receiving fd");
+            return -1;
+        }
+
+        if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK)) {
+            g_coroutine_socket_wait(&c->coroutine, c->sock, G_IO_IN);
+            g_clear_error(&error);
+        } else {
+            g_warning("failed to get fd: %s", error->message);
+            g_clear_error(&error);
+            return -1;
+        }
+    }
+
+    g_warn_if_fail(num_msg == 1);
+    if (num_msg == 1) {
+        g_return_val_if_fail(g_socket_control_message_get_msg_type(msg[0]) == SCM_RIGHTS, -1);
+        fds = g_unix_fd_message_steal_fds(G_UNIX_FD_MESSAGE(msg[0]), &num_fds);
+    }
+
+    if (num_fds == 1)
+        fd = *fds;
+
+    for (i = 0; i < num_msg; i++)
+        g_object_unref(msg[i]);
+
+    g_free(fds);
+    g_free(msg);
+
+    return fd;
+}
+#endif
 
 /*
  * Read at least 1 more byte of data straight off the wire
@@ -1889,6 +1944,7 @@ static const char *to_string[] = {
     [ SPICE_CHANNEL_USBREDIR ] = "usbredir",
     [ SPICE_CHANNEL_PORT ] = "port",
     [ SPICE_CHANNEL_WEBDAV ] = "webdav",
+    [ SPICE_CHANNEL_VIRGL ] = "virgl",
 };
 
 /**
@@ -1952,6 +2008,7 @@ gchar *spice_channel_supported_string(void)
 #ifdef USE_PHODAV
                      spice_channel_type_to_string(SPICE_CHANNEL_WEBDAV),
 #endif
+                     spice_channel_type_to_string(SPICE_CHANNEL_VIRGL),
                      NULL);
 }
 
@@ -2024,6 +2081,9 @@ SpiceChannel *spice_channel_new(SpiceSession *s, int type, int id)
 #endif
     case SPICE_CHANNEL_PORT:
         gtype = SPICE_TYPE_PORT_CHANNEL;
+        break;
+    case SPICE_CHANNEL_VIRGL:
+        gtype = SPICE_TYPE_VIRGL_CHANNEL;
         break;
     default:
         g_debug("unsupported channel kind: %s: %d",

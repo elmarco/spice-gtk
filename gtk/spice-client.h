@@ -44,6 +44,7 @@
 #include "channel-usbredir.h"
 #include "channel-port.h"
 #include "channel-webdav.h"
+#include "channel-virgl.h"
 
 #include "smartcard-manager.h"
 #include "usb-device-manager.h"

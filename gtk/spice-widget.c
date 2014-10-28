@@ -562,6 +562,10 @@ static void spice_display_init(SpiceDisplay *display)
 
     d->mouse_cursor = get_blank_cursor();
     d->have_mitshm = true;
+
+#ifdef USE_EGL
+    spice_egl_init(display);
+#endif
 }
 
 static GObject *
@@ -1116,6 +1120,9 @@ static gboolean draw_event(GtkWidget *widget, cairo_t *cr)
     SpiceDisplay *display = SPICE_DISPLAY(widget);
     SpiceDisplayPrivate *d = display->priv;
     g_return_val_if_fail(d != NULL, false);
+
+    if (d->egl.enabled)
+        return false;
 
     if (d->mark == 0 || d->data == NULL ||
         d->area.width == 0 || d->area.height == 0)
@@ -1735,6 +1742,9 @@ static gboolean configure_event(GtkWidget *widget, GdkEventConfigure *conf)
         d->ww = conf->width;
         d->wh = conf->height;
         recalc_geometry(widget);
+#ifdef USE_EGL
+        spice_egl_resize_display(display, conf->width, conf->height);
+#endif
     }
 
     d->mx = conf->x;
@@ -1769,12 +1779,19 @@ static void realize(GtkWidget *widget)
     d->keycode_map =
         vnc_display_keymap_gdk2xtkbd_table(gtk_widget_get_window(widget),
                                            &d->keycode_maplen);
+
+#ifdef USE_EGL
+    spice_egl_realize_display(display);
+#endif
     update_image(display);
 }
 
 static void unrealize(GtkWidget *widget)
 {
     spicex_image_destroy(SPICE_DISPLAY(widget));
+#ifdef USE_EGL
+    spice_egl_unrealize_display(SPICE_DISPLAY(widget));
+#endif
 
     GTK_WIDGET_CLASS(spice_display_parent_class)->unrealize(widget);
 }
@@ -2184,6 +2201,11 @@ static void invalidate(SpiceChannel *channel,
         .height = h
     };
 
+    if (d->egl.enabled) {
+        d->egl.enabled = false;
+        gtk_widget_set_double_buffered(GTK_WIDGET(display), true);
+    }
+
     if (!gtk_widget_get_window(GTK_WIDGET(display)))
         return;
 
@@ -2391,6 +2413,32 @@ static void cursor_reset(SpiceCursorChannel *channel, gpointer data)
     gdk_window_set_cursor(window, NULL);
 }
 
+static void virgl_scanout(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    const SpiceVirglScanout *scanout;
+
+    scanout = spice_virgl_channel_get_scanout(d->virgl);
+    g_return_if_fail(scanout != NULL);
+
+    SPICE_DEBUG("%s: got scanout",  __FUNCTION__);
+    spice_egl_update_scanout(display, scanout);
+}
+
+static void virgl_update(SpiceDisplay *display,
+                         guint32 x, guint32 y, guint32 w, guint32 h)
+{
+    SpiceDisplayPrivate *d = display->priv;
+
+    SPICE_DEBUG("%s: got update",  __FUNCTION__);
+    if (!d->egl.enabled) {
+        d->egl.enabled = TRUE;
+        gtk_widget_set_double_buffered(GTK_WIDGET(display), FALSE);
+    }
+
+    spice_egl_update_display(display);
+}
+
 static void channel_new(SpiceSession *s, SpiceChannel *channel, gpointer data)
 {
     SpiceDisplay *display = data;
@@ -2429,6 +2477,19 @@ static void channel_new(SpiceSession *s, SpiceChannel *channel, gpointer data)
         spice_channel_connect(channel);
         spice_main_set_display_enabled(d->main, get_display_id(display), TRUE);
         return;
+    }
+
+    if (SPICE_IS_VIRGL_CHANNEL(channel)) {
+        if (id != d->channel_id)
+            return;
+
+        d->virgl = SPICE_VIRGL_CHANNEL(channel);
+        spice_g_signal_connect_object(channel, "notify::scanout",
+                                      G_CALLBACK(virgl_scanout), display, G_CONNECT_SWAPPED);
+        spice_g_signal_connect_object(channel, "update",
+                                      G_CALLBACK(virgl_update), display, G_CONNECT_SWAPPED);
+
+        spice_channel_connect(channel);
     }
 
     if (SPICE_IS_CURSOR_CHANNEL(channel)) {
@@ -2483,6 +2544,13 @@ static void channel_destroy(SpiceSession *s, SpiceChannel *channel, gpointer dat
             return;
         primary_destroy(d->display, display);
         d->display = NULL;
+        return;
+    }
+
+    if (SPICE_IS_VIRGL_CHANNEL(channel)) {
+        if (id != d->channel_id)
+            return;
+        d->virgl = NULL;
         return;
     }
 

@@ -126,6 +126,9 @@ gint spice_channel_string_to_type(const gchar *str);
 
 const GError* spice_channel_get_error(SpiceChannel *channel);
 
+#ifdef G_OS_UNIX
+gint spice_channel_unix_read_fd(SpiceChannel *channel);
+#endif
 G_END_DECLS
 
 #endif /* __SPICE_CLIENT_CHANNEL_H__ */

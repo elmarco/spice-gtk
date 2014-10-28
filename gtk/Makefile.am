@@ -163,6 +163,12 @@ SPICE_GTK_SOURCES_COMMON +=		\
 endif
 
 if WITH_GTK
+if WITH_EGL
+SPICE_GTK_SOURCES_COMMON +=		\
+	spice-widget-egl.c		\
+	$(NULL)
+endif
+
 if HAVE_GTK_2
 libspice_client_gtk_2_0_la_DEPEDENCIES = $(GTK_SYMBOLS_FILE)
 libspice_client_gtk_2_0_la_LDFLAGS = $(SPICE_GTK_LDFLAGS_COMMON)
@@ -256,6 +262,7 @@ libspice_client_glib_2_0_la_SOURCES =			\
 							\
 	channel-base.c					\
 	channel-webdav.c				\
+	channel-virgl.c					\
 	channel-cursor.c				\
 	channel-display.c				\
 	channel-display-priv.h				\
@@ -319,6 +326,7 @@ libspice_client_glibinclude_HEADERS =	\
 	channel-smartcard.h		\
 	channel-usbredir.h		\
 	channel-webdav.h		\
+	channel-virgl.h			\
 	usb-device-manager.h		\
 	smartcard-manager.h		\
 	$(NULL)
@@ -620,6 +628,7 @@ glib_introspection_files =				\
 	spice-option.c					\
 	spice-util.c					\
 	channel-webdav.c				\
+	channel-virgl.c					\
 	channel-cursor.c				\
 	channel-display.c				\
 	channel-inputs.c				\

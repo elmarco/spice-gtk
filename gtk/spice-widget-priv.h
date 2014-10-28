@@ -32,9 +32,17 @@ G_BEGIN_DECLS
 #include <windows.h>
 #endif
 
+#ifdef USE_EGL
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <X11/Xlib.h>
+#include <gdk/gdkx.h>
+#endif
+
 #include "spice-widget.h"
 #include "spice-common.h"
 #include "spice-gtk-session.h"
+#include "channel-virgl.h"
 
 #define SPICE_DISPLAY_GET_PRIVATE(obj)                                  \
     (G_TYPE_INSTANCE_GET_PRIVATE((obj), SPICE_TYPE_DISPLAY, SpiceDisplayPrivate))
@@ -124,6 +132,23 @@ struct _SpiceDisplayPrivate {
     int                     x11_accel_denominator;
     int                     x11_threshold;
 #endif
+#ifdef USE_EGL
+    struct {
+        gboolean            enabled;
+        EGLSurface          surface;
+        EGLDisplay          display;
+        EGLConfig           conf;
+        EGLContext          ctx;
+        guint32             tex_loc;
+        guint32             mproj;
+        guint32             attr_pos, attr_tex;
+        guint32             vbuf_id;
+        guint               tex_id;
+        EGLImageKHR         image;
+        SpiceVirglScanout   scanout;
+    } egl;
+#endif
+    SpiceVirglChannel      *virgl;
 };
 
 int      spicex_image_create                 (SpiceDisplay *display);
@@ -135,6 +160,13 @@ void     spicex_expose_event                 (SpiceDisplay *display, GdkEventExp
 #endif
 gboolean spicex_is_scaled                    (SpiceDisplay *display);
 void     spice_display_get_scaling           (SpiceDisplay *display, double *s, int *x, int *y, int *w, int *h);
+int      spice_egl_init                      (SpiceDisplay *display);
+int      spice_egl_realize_display           (SpiceDisplay *display);
+void     spice_egl_unrealize_display         (SpiceDisplay *display);
+void     spice_egl_update_display            (SpiceDisplay *display);
+void     spice_egl_resize_display            (SpiceDisplay *display, int w, int h);
+int      spice_egl_update_scanout            (SpiceDisplay *display,
+                                              const SpiceVirglScanout *scanout);
 
 G_END_DECLS
 
