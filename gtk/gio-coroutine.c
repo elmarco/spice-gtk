@@ -223,9 +223,11 @@ g_coroutine_signal_emit(gpointer instance, guint signal_id,
         g_signal_emit_valist(instance, signal_id, detail, data.var_args);
     } else {
         g_object_ref(instance);
-        g_idle_add(emit_main_context, &data);
+        guint idle = g_idle_add(emit_main_context, &data);
         coroutine_yield(NULL);
         g_warn_if_fail(data.notified);
+        if (!data.notified)
+            g_source_remove(idle);
         g_object_unref(instance);
     }
 
@@ -260,7 +262,7 @@ void g_coroutine_object_notify(GObject *object,
         data.propname = (gpointer)property_name;
         data.notified = FALSE;
 
-        g_idle_add(notify_main_context, &data);
+        guint idle = g_idle_add(notify_main_context, &data);
 
         /* This switches to the system coroutine context, lets
          * the idle function run to dispatch the signal, and
@@ -270,6 +272,8 @@ void g_coroutine_object_notify(GObject *object,
          */
         coroutine_yield(NULL);
         g_warn_if_fail(data.notified);
+        if (!data.notified)
+            g_source_remove(idle);
         g_object_unref(object);
     }
 }
