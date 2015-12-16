@@ -777,18 +777,7 @@ static int create_canvas(SpiceChannel *channel, display_surface *surface)
         }
 
         CHANNEL_DEBUG(channel, "Create primary canvas");
-#if defined(WITH_X11) && defined(HAVE_SYS_SHM_H)
-        surface->shmid = shmget(IPC_PRIVATE, surface->size, IPC_CREAT | 0777);
-        if (surface->shmid >= 0) {
-            surface->data = shmat(surface->shmid, 0, 0);
-            if (surface->data == NULL) {
-                shmctl(surface->shmid, IPC_RMID, 0);
-                surface->shmid = -1;
-            }
-        }
-#else
         surface->shmid = -1;
-#endif
     } else {
         surface->shmid = -1;
     }
