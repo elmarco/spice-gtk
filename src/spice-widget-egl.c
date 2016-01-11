@@ -28,6 +28,7 @@
 #include <libdrm/drm_fourcc.h>
 
 #include <gdk/gdkx.h>
+#include <gdk/gdkwayland.h>
 
 static const char *spice_egl_vertex_src =       \
 "                                               \
@@ -199,6 +200,14 @@ gboolean spice_egl_init(SpiceDisplay *display, GError **err)
     EGLNativeDisplayType dpy = 0;
     GdkDisplay *gdk_dpy = gdk_display_get_default();
 
+#ifdef GDK_WINDOWING_WAYLAND
+    if (GDK_IS_WAYLAND_DISPLAY(gdk_dpy)) {
+        d->egl.ctx = eglGetCurrentContext();
+        dpy = (EGLNativeDisplayType)gdk_wayland_display_get_wl_display(gdk_dpy);
+        d->egl.display = eglGetDisplay(dpy);
+        return spice_egl_init_shaders(display, err);
+    }
+#endif
 #ifdef GDK_WINDOWING_X11
     if (GDK_IS_X11_DISPLAY(gdk_dpy)) {
         dpy = (EGLNativeDisplayType)gdk_x11_display_get_xdisplay(gdk_dpy);
